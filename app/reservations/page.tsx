@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,48 +15,34 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-
-// Mock data - En producción vendría de la API
-const mockReservations = [
-  {
-    id: 1,
-    id_sala: 1,
-    sala_nombre: "Sala 101",
-    biblioteca: "Biblioteca Central",
-    fecha: "2025-01-15",
-    hora_inicio: "10:00",
-    hora_fin: "12:00",
-    capacidad: 4,
-    usuario: "Juan Pérez",
-  },
-  {
-    id: 2,
-    id_sala: 3,
-    sala_nombre: "Sala A1",
-    biblioteca: "Biblioteca de Ciencias",
-    fecha: "2025-01-16",
-    hora_inicio: "14:00",
-    hora_fin: "16:00",
-    capacidad: 5,
-    usuario: "Juan Pérez",
-  },
-  {
-    id: 3,
-    id_sala: 2,
-    sala_nombre: "Sala 102",
-    biblioteca: "Biblioteca Central",
-    fecha: "2025-01-10",
-    hora_inicio: "16:00",
-    hora_fin: "18:00",
-    capacidad: 2,
-    usuario: "Juan Pérez",
-  },
-]
+import { getUserReservations, type Reservation } from "@/lib/api"
 
 export default function ReservationsPage() {
-  const [reservations, setReservations] = useState(mockReservations)
+  const [reservations, setReservations] = useState<Reservation[]>([])
   const [selectedReservation, setSelectedReservation] = useState<number | null>(null)
   const [showCancelDialog, setShowCancelDialog] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Usuario hardcodeado (en producción vendría de autenticación)
+  const userId = 1
+
+  useEffect(() => {
+    async function fetchReservations() {
+      try {
+        setLoading(true)
+        setError(null)
+        const data = await getUserReservations(userId)
+        setReservations(data)
+      } catch (err) {
+        console.error('Error al obtener reservas:', err)
+        setError('Error al conectar con el servidor')
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchReservations()
+  }, [])
 
   const isPastReservation = (fecha: string, hora_fin: string) => {
     const reservationDateTime = new Date(`${fecha}T${hora_fin}`)
@@ -70,16 +56,16 @@ export default function ReservationsPage() {
 
   const handleCancelConfirm = () => {
     if (selectedReservation) {
-      // En producción, esto haría una llamada a la API
+      // TODO: Implementar endpoint DELETE /api/reservations/{id}
       setReservations(reservations.filter((r) => r.id !== selectedReservation))
       setShowCancelDialog(false)
       setSelectedReservation(null)
     }
   }
 
-  const upcomingReservations = reservations.filter((r) => !isPastReservation(r.fecha, r.hora_fin))
+  const upcomingReservations = reservations.filter((r) => !isPastReservation(r.date, r.endTime))
 
-  const pastReservations = reservations.filter((r) => isPastReservation(r.fecha, r.hora_fin))
+  const pastReservations = reservations.filter((r) => isPastReservation(r.date, r.endTime))
 
   return (
     <div className="min-h-screen bg-background">
@@ -122,7 +108,23 @@ export default function ReservationsPage() {
               <Calendar className="h-5 w-5 text-primary" />
               Próximas Reservas ({upcomingReservations.length})
             </h3>
-            {upcomingReservations.length === 0 ? (
+            {loading ? (
+              <Card>
+                <CardContent className="text-center py-12">
+                  <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+                  <h4 className="text-lg font-semibold mb-2">Cargando reservas...</h4>
+                </CardContent>
+              </Card>
+            ) : error ? (
+              <Card>
+                <CardContent className="text-center py-12">
+                  <div className="h-16 w-16 text-destructive mx-auto mb-4">⚠️</div>
+                  <h4 className="text-lg font-semibold mb-2">Error al cargar reservas</h4>
+                  <p className="text-muted-foreground mb-4">{error}</p>
+                  <Button onClick={() => window.location.reload()}>Reintentar</Button>
+                </CardContent>
+              </Card>
+            ) : upcomingReservations.length === 0 ? (
               <Card>
                 <CardContent className="text-center py-12">
                   <Calendar className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
@@ -140,10 +142,10 @@ export default function ReservationsPage() {
                     <CardHeader>
                       <div className="flex items-start justify-between">
                         <div>
-                          <CardTitle className="text-lg">{reservation.sala_nombre}</CardTitle>
+                          <CardTitle className="text-lg">{reservation.room.name}</CardTitle>
                           <CardDescription className="flex items-center gap-1 mt-1">
                             <MapPin className="h-3 w-3" />
-                            {reservation.biblioteca}
+                            {reservation.room.libraryName}
                           </CardDescription>
                         </div>
                         <Badge variant="secondary">Activa</Badge>
@@ -154,7 +156,7 @@ export default function ReservationsPage() {
                         <div className="flex items-center gap-2 text-sm">
                           <Calendar className="h-4 w-4 text-muted-foreground" />
                           <span>
-                            {new Date(reservation.fecha).toLocaleDateString("es-ES", {
+                            {new Date(reservation.date).toLocaleDateString("es-ES", {
                               weekday: "long",
                               year: "numeric",
                               month: "long",
@@ -165,12 +167,8 @@ export default function ReservationsPage() {
                         <div className="flex items-center gap-2 text-sm">
                           <Clock className="h-4 w-4 text-muted-foreground" />
                           <span>
-                            {reservation.hora_inicio} - {reservation.hora_fin}
+                            {reservation.startTime} - {reservation.endTime}
                           </span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                          <Users className="h-4 w-4 text-muted-foreground" />
-                          <span>Capacidad: {reservation.capacidad} personas</span>
                         </div>
                         <Button
                           variant="destructive"
@@ -190,7 +188,7 @@ export default function ReservationsPage() {
           </div>
 
           {/* Past Reservations */}
-          {pastReservations.length > 0 && (
+          {!loading && pastReservations.length > 0 && (
             <div>
               <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
                 <Clock className="h-5 w-5 text-muted-foreground" />
@@ -202,10 +200,10 @@ export default function ReservationsPage() {
                     <CardHeader>
                       <div className="flex items-start justify-between">
                         <div>
-                          <CardTitle className="text-lg">{reservation.sala_nombre}</CardTitle>
+                          <CardTitle className="text-lg">{reservation.room.name}</CardTitle>
                           <CardDescription className="flex items-center gap-1 mt-1">
                             <MapPin className="h-3 w-3" />
-                            {reservation.biblioteca}
+                            {reservation.room.libraryName}
                           </CardDescription>
                         </div>
                         <Badge variant="outline">Completada</Badge>
@@ -216,7 +214,7 @@ export default function ReservationsPage() {
                         <div className="flex items-center gap-2 text-sm">
                           <Calendar className="h-4 w-4 text-muted-foreground" />
                           <span>
-                            {new Date(reservation.fecha).toLocaleDateString("es-ES", {
+                            {new Date(reservation.date).toLocaleDateString("es-ES", {
                               weekday: "long",
                               year: "numeric",
                               month: "long",
@@ -227,12 +225,8 @@ export default function ReservationsPage() {
                         <div className="flex items-center gap-2 text-sm">
                           <Clock className="h-4 w-4 text-muted-foreground" />
                           <span>
-                            {reservation.hora_inicio} - {reservation.hora_fin}
+                            {reservation.startTime} - {reservation.endTime}
                           </span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                          <Users className="h-4 w-4 text-muted-foreground" />
-                          <span>Capacidad: {reservation.capacidad} personas</span>
                         </div>
                       </div>
                     </CardContent>

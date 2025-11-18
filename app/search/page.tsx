@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,40 +9,54 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { BookOpen, Search, Users, MapPin, Clock } from "lucide-react"
 import { AvailabilityCalendar } from "@/components/availability-calendar"
 import { RoomCard } from "@/components/room-card"
-
-// Mock data - En producción vendría de la API
-const mockLibraries = [
-  { id: 1, nombre: "Biblioteca Central", direccion: "Campus Norte" },
-  { id: 2, nombre: "Biblioteca de Ciencias", direccion: "Edificio C" },
-  { id: 3, nombre: "Biblioteca de Humanidades", direccion: "Campus Sur" },
-]
-
-const mockRooms = [
-  { id: 1, id_biblioteca: 1, nombre: "Sala 101", capacidad: 4, biblioteca: "Biblioteca Central" },
-  { id: 2, id_biblioteca: 1, nombre: "Sala 102", capacidad: 2, biblioteca: "Biblioteca Central" },
-  { id: 3, id_biblioteca: 2, nombre: "Sala A1", capacidad: 5, biblioteca: "Biblioteca de Ciencias" },
-  { id: 4, id_biblioteca: 2, nombre: "Sala A2", capacidad: 3, biblioteca: "Biblioteca de Ciencias" },
-]
+import { getRooms, type Room } from "@/lib/api"
 
 export default function SearchPage() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
   const [selectedLibrary, setSelectedLibrary] = useState<string>("0")
   const [selectedCapacity, setSelectedCapacity] = useState<string>("0")
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>("0")
-  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchResults, setSearchResults] = useState<Room[]>([])
+  const [allRooms, setAllRooms] = useState<Room[]>([])
   const [hasSearched, setHasSearched] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Obtener todas las salas al cargar el componente
+  useEffect(() => {
+    async function fetchRooms() {
+      try {
+        setLoading(true)
+        setError(null)
+        const rooms = await getRooms()
+        setAllRooms(rooms)
+      } catch (err) {
+        console.error('Error al obtener salas:', err)
+        setError('Error al conectar con el servidor. Asegúrate de que el backend esté corriendo.')
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchRooms()
+  }, [])
+
+  // Obtener lista única de bibliotecas
+  const libraries = Array.from(new Set(allRooms.map(room => room.libraryName))).map((name, index) => ({
+    id: index + 1,
+    nombre: name
+  }))
 
   const handleSearch = () => {
-    // En producción, esto haría una llamada a la API
-    // Filtrar por criterios seleccionados
-    let results = mockRooms
+    // Filtrar salas por criterios seleccionados
+    let results = allRooms
 
     if (selectedLibrary !== "0") {
-      results = results.filter((room) => room.id_biblioteca === Number.parseInt(selectedLibrary))
+      const libraryName = libraries.find(lib => lib.id.toString() === selectedLibrary)?.nombre
+      results = results.filter((room) => room.libraryName === libraryName)
     }
 
     if (selectedCapacity !== "0") {
-      results = results.filter((room) => room.capacidad >= Number.parseInt(selectedCapacity))
+      results = results.filter((room) => room.capacity >= Number.parseInt(selectedCapacity))
     }
 
     setSearchResults(results)
@@ -110,7 +124,7 @@ export default function SearchPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="0">Todas las bibliotecas</SelectItem>
-                      {mockLibraries.map((library) => (
+                      {libraries.map((library) => (
                         <SelectItem key={library.id} value={library.id.toString()}>
                           {library.nombre}
                         </SelectItem>
@@ -172,7 +186,24 @@ export default function SearchPage() {
 
           {/* Search Results */}
           <div className="lg:col-span-2">
-            {!hasSearched ? (
+            {loading ? (
+              <Card className="flex items-center justify-center h-full min-h-[400px]">
+                <CardContent className="text-center py-12">
+                  <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+                  <h3 className="text-xl font-semibold mb-2">Cargando salas...</h3>
+                  <p className="text-muted-foreground">Conectando con el servidor</p>
+                </CardContent>
+              </Card>
+            ) : error ? (
+              <Card className="flex items-center justify-center h-full min-h-[400px]">
+                <CardContent className="text-center py-12">
+                  <div className="h-16 w-16 text-destructive mx-auto mb-4">⚠️</div>
+                  <h3 className="text-xl font-semibold mb-2">Error de conexión</h3>
+                  <p className="text-muted-foreground mb-4">{error}</p>
+                  <Button onClick={() => window.location.reload()}>Reintentar</Button>
+                </CardContent>
+              </Card>
+            ) : !hasSearched ? (
               <Card className="flex items-center justify-center h-full min-h-[400px]">
                 <CardContent className="text-center py-12">
                   <Search className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
